@@ -13,9 +13,8 @@ public class ExportPageFactory implements DicomExportFactory {
     public ExportDicom createDicomExportPage(Hashtable<String, Object> properties) {
         if (properties != null) {
             DicomModel dicomModel = (DicomModel) properties.get(DicomModel.class.getName());
-            ExportTree exportTree = (ExportTree) properties.get(ExportTree.class.getName());
-            if (dicomModel != null && exportTree != null) {
-                return new IsoImageExport(dicomModel, exportTree);
+            if (dicomModel != null) {
+                return new IsoImageExport(dicomModel, new ExportTree(dicomModel));
             }
         }
         return null;

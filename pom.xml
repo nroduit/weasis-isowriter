@@ -20,30 +20,9 @@
 				<artifactId>maven-bundle-plugin</artifactId>
 				<configuration>
 					<instructions>
-						<Import-Package>!org.apache.commons.lang,!org.apache.tools.ant.*,*</Import-Package>
-						<Service-Component>OSGI-INF/toolbar.xml,OSGI-INF/export.xml</Service-Component>
+						<Service-Component>OSGI-INF/export.xml</Service-Component>
 					</instructions>
 				</configuration>
-			</plugin>
-			<plugin>
-				<!-- This plugin requires Maven version 3.0.3 or higher. Not the best way to handle libraries! -->
-				<groupId>com.googlecode.addjars-maven-plugin</groupId>
-				<artifactId>addjars-maven-plugin</artifactId>
-				<version>1.0.5</version>
-				<executions>
-					<execution>
-						<goals>
-							<goal>add-jars</goal>
-						</goals>
-						<configuration>
-							<resources>
-								<resource>
-									<directory>${basedir}/lib</directory>
-								</resource>
-							</resources>
-						</configuration>
-					</execution>
-				</executions>
 			</plugin>
 		</plugins>
 	</build>
@@ -71,6 +50,16 @@
 			<artifactId>weasis-dicom-explorer</artifactId>
 			<version>0.5.15-SNAPSHOT</version>
 			<scope>provided</scope>
+		</dependency>
+		<dependency>
+			<groupId>com.github.stephenc.java-iso-tools</groupId>
+			<artifactId>iso9660-writer</artifactId>
+			<version>2.0.1-SNAPSHOT</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.stephenc.java-iso-tools</groupId>
+			<artifactId>sabre</artifactId>
+			<version>2.0.1-SNAPSHOT</version>
 		</dependency>
 	</dependencies>
 </project>

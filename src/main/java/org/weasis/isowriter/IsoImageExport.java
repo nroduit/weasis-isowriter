@@ -11,22 +11,28 @@
 package org.weasis.isowriter;
 
 import java.awt.BorderLayout;
-import java.awt.FlowLayout;
-import java.awt.Graphics2D;
-import java.awt.color.ColorSpace;
-import java.awt.image.BufferedImage;
-import java.awt.image.IndexColorModel;
-import java.awt.image.Raster;
+import java.awt.Component;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.image.RenderedImage;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.Enumeration;
+import java.util.LinkedList;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
-import javax.media.jai.PlanarImage;
-import javax.media.jai.operator.SubsampleAverageDescriptor;
+import javax.swing.Box;
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -34,11 +40,8 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import org.dcm4che2.data.BasicDicomObject;
-import org.dcm4che2.data.DicomElement;
 import org.dcm4che2.data.DicomObject;
 import org.dcm4che2.data.Tag;
-import org.dcm4che2.data.VR;
 import org.dcm4che2.io.DicomInputStream;
 import org.dcm4che2.io.StopTagInputHandler;
 import org.dcm4che2.media.ApplicationProfile;
@@ -53,7 +56,6 @@ import org.weasis.core.api.gui.util.AbstractProperties;
 import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaSeries;
 import org.weasis.core.api.media.data.TagW;
-import org.weasis.core.api.media.data.Thumbnail;
 import org.weasis.core.api.util.FileUtil;
 import org.weasis.dicom.codec.DicomImageElement;
 import org.weasis.dicom.codec.DicomSeries;
@@ -61,27 +63,31 @@ import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExplorerTask;
 import org.weasis.dicom.explorer.ExportDicom;
 import org.weasis.dicom.explorer.ExportTree;
+import org.weasis.dicom.explorer.LocalExport;
 
-import de.tu_darmstadt.informatik.rbg.hatlak.iso9660.ConfigException;
-import de.tu_darmstadt.informatik.rbg.hatlak.iso9660.ISO9660RootDirectory;
-import de.tu_darmstadt.informatik.rbg.hatlak.iso9660.impl.CreateISO;
-import de.tu_darmstadt.informatik.rbg.hatlak.iso9660.impl.ISO9660Config;
-import de.tu_darmstadt.informatik.rbg.hatlak.iso9660.impl.ISOImageFileHandler;
-import de.tu_darmstadt.informatik.rbg.hatlak.joliet.impl.JolietConfig;
-import de.tu_darmstadt.informatik.rbg.hatlak.rockridge.impl.RockRidgeConfig;
-import de.tu_darmstadt.informatik.rbg.mhartle.sabre.HandlerException;
-import de.tu_darmstadt.informatik.rbg.mhartle.sabre.StreamHandler;
+import com.github.stephenc.javaisotools.iso9660.ConfigException;
+import com.github.stephenc.javaisotools.iso9660.ISO9660RootDirectory;
+import com.github.stephenc.javaisotools.iso9660.impl.CreateISO;
+import com.github.stephenc.javaisotools.iso9660.impl.ISO9660Config;
+import com.github.stephenc.javaisotools.iso9660.impl.ISOImageFileHandler;
+import com.github.stephenc.javaisotools.joliet.impl.JolietConfig;
+import com.github.stephenc.javaisotools.rockridge.impl.RockRidgeConfig;
+import com.github.stephenc.javaisotools.sabre.HandlerException;
+import com.github.stephenc.javaisotools.sabre.StreamHandler;
 
 public class IsoImageExport extends AbstractItemDialogPage implements ExportDicom {
     private static final Logger LOGGER = LoggerFactory.getLogger(IsoImageExport.class);
 
-    private static final char[] HEX_DIGIT = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D',
-        'E', 'F' };
+    private static final File BURN_DIR = AbstractProperties.buildAccessibleTempDirecotry("burn");
 
+    private final JCheckBox checkBoxAddWeasisViewer = new JCheckBox("Add Weasis viewer");
+    private final JCheckBox checkBoxAddJpeg = new JCheckBox("Add JPEG images");
+    private final JCheckBox checkBoxCompression = new JCheckBox("Uncompressed DICOMs");
     private final DicomModel dicomModel;
     private final ExportTree exportTree;
 
     private JPanel panel;
+    private final Component horizontalStrut = Box.createHorizontalStrut(20);
 
     public IsoImageExport(DicomModel dicomModel, ExportTree exportTree) {
         super("Burn CD/DVD");
@@ -94,26 +100,50 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     public void initGUI() {
         setLayout(new BorderLayout());
         panel = new JPanel();
-        FlowLayout flowLayout = (FlowLayout) panel.getLayout();
-        flowLayout.setAlignment(FlowLayout.LEFT);
 
         add(panel, BorderLayout.NORTH);
+        GridBagLayout gbl_panel = new GridBagLayout();
 
-        JCheckBox checkBoxCompression = new JCheckBox("Uncompressed images");
-        panel.add(checkBoxCompression);
+        panel.setLayout(gbl_panel);
 
-        JCheckBox checkBoxAddJpeg = new JCheckBox("Add JPEG images");
-        panel.add(checkBoxAddJpeg);
+        GridBagConstraints gbc_checkBoxAddWeasisViewer = new GridBagConstraints();
+        gbc_checkBoxAddWeasisViewer.anchor = GridBagConstraints.NORTHWEST;
+        gbc_checkBoxAddWeasisViewer.insets = new Insets(0, 0, 0, 5);
+        gbc_checkBoxAddWeasisViewer.gridx = 0;
+        gbc_checkBoxAddWeasisViewer.gridy = 0;
+        panel.add(checkBoxAddWeasisViewer, gbc_checkBoxAddWeasisViewer);
 
-        JCheckBox checkBoxAddWeasisViewer = new JCheckBox("Add Weasis viewer");
-        panel.add(checkBoxAddWeasisViewer);
+        GridBagConstraints gbc_checkBoxAddJpeg = new GridBagConstraints();
+        gbc_checkBoxAddJpeg.insets = new Insets(0, 0, 0, 5);
+        gbc_checkBoxAddJpeg.anchor = GridBagConstraints.NORTHWEST;
+        gbc_checkBoxAddJpeg.gridx = 1;
+        gbc_checkBoxAddJpeg.gridy = 0;
+        panel.add(checkBoxAddJpeg, gbc_checkBoxAddJpeg);
+
+        GridBagConstraints gbc_horizontalStrut = new GridBagConstraints();
+        gbc_horizontalStrut.weightx = 1.0;
+        gbc_horizontalStrut.gridx = 2;
+        gbc_horizontalStrut.gridy = 0;
+        panel.add(horizontalStrut, gbc_horizontalStrut);
+
+        GridBagConstraints gbc_checkBoxCompression = new GridBagConstraints();
+        gbc_checkBoxCompression.anchor = GridBagConstraints.NORTHWEST;
+        gbc_checkBoxCompression.insets = new Insets(0, 0, 5, 5);
+        gbc_checkBoxCompression.gridx = 0;
+        gbc_checkBoxCompression.gridy = 1;
+        // TODO Add it in Weasis 2.0 plugin
+        // panel.add(checkBoxCompression, gbc_checkBoxCompression);
 
         add(exportTree, BorderLayout.CENTER);
     }
 
     protected void initialize(boolean afirst) {
         if (afirst) {
-
+            // TODO make local prefs? Add BuldlePreference
+            checkBoxAddJpeg.setSelected(true);
+            checkBoxAddWeasisViewer.setSelected(true);
+            TreePath rootPath = new TreePath(exportTree.getRootNode());
+            exportTree.getTree().addCheckingPath(rootPath);
         }
     }
 
@@ -140,15 +170,26 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     @Override
     public void exportDICOM(final ExportTree tree, JProgressBar info) throws IOException {
 
-        ExplorerTask task = new ExplorerTask("Exporting...") { //$NON-NLS-1$
+        ExplorerTask task = new ExplorerTask("Burning...") { //$NON-NLS-1$
 
                 @Override
                 protected Boolean doInBackground() throws Exception {
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
-                    // TODO add unique folder
-                    File exportDir = AbstractProperties.buildAccessibleTempDirecotry("burn", "iso");
+                    File exportDir = createTempDir();
                     writeDicom(exportDir, tree);
+                    if (checkBoxAddJpeg.isSelected()) {
+                        // TODO issue do not close stream!
+                        writeJpeg(new File(exportDir, "JPEG"), tree, true, 90);
+                    }
+                    if (checkBoxAddWeasisViewer.isSelected()) {
+                        // TODO set dependency in Maven
+                        String path = "/home/nicolas/Share Apps/DICOM/Weasis/1.2.5/weasis-portable.zip";
+                        File file = new File(path);
+                        if (file.canRead()) {
+                            unzip(file, exportDir);
+                        }
+                    }
                     makeISO(exportDir);
                     return true;
                 }
@@ -173,7 +214,6 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 for (int i = 0; i < chars.length; i++) {
                     chars[i] = '0';
                 }
-
                 return new String(chars) + val;
 
             } else {
@@ -183,11 +223,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         return (String) img.getTagValue(TagW.SOPInstanceUID);
     }
 
-    private void writeOther(File exportDir, ExportTree tree, String format) {
-
-        boolean keepNames = true;
-        int jpegQuality = 90;
-
+    private void writeJpeg(File exportDir, ExportTree tree, boolean keepNames, int jpegQuality) {
         synchronized (tree) {
             TreePath[] paths = tree.getTree().getCheckingPaths();
             for (TreePath treePath : paths) {
@@ -214,15 +250,15 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                             }
                             buffer.append('-');
                             // Hash of UID to guaranty the unique behavior of the name (can have only series number).
-                            buffer.append(makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
+                            buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
                         }
                     } else {
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.PatientPseudoUID)));
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.PatientPseudoUID)));
                         buffer.append(File.separator);
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.StudyInstanceUID)));
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.StudyInstanceUID)));
                         buffer.append(File.separator);
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
-                        instance = makeFileIDs(instance);
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
+                        instance = LocalExport.makeFileIDs(instance);
                     }
 
                     File destinationDir = new File(exportDir, buffer.toString());
@@ -236,9 +272,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                     if (image != null) {
                         ImageFiler.writeJPG(new File(destinationDir, instance + ".jpg"), image, jpegQuality / 100.0f); //$NON-NLS-1$
                     } else {
-                        LOGGER.error("Cannot export DICOM file: ", format, img.getFile()); //$NON-NLS-1$
+                        LOGGER.error("Cannot export DICOM file to jpeg: {}", img.getFile()); //$NON-NLS-1$
                     }
-
                 }
             }
         }
@@ -280,12 +315,12 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         buffer.append("DICOM"); //$NON-NLS-1$
                         buffer.append(File.separator);
 
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.PatientPseudoUID)));
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.PatientPseudoUID)));
                         buffer.append(File.separator);
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.StudyInstanceUID)));
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.StudyInstanceUID)));
                         buffer.append(File.separator);
-                        buffer.append(makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
-                        iuid = makeFileIDs(iuid);
+                        buffer.append(LocalExport.makeFileIDs((String) img.getTagValue(TagW.SeriesInstanceUID)));
+                        iuid = LocalExport.makeFileIDs(iuid);
 
                         File destinationDir = new File(exportDir, buffer.toString());
                         boolean newSeries = destinationDir.mkdirs();
@@ -293,9 +328,15 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         File destinationFile = new File(destinationDir, iuid);
                         if (FileUtil.nioCopyFile(img.getFile(), destinationFile)) {
                             if (writer != null) {
-                                DicomInputStream in = new DicomInputStream(destinationFile);
-                                in.setHandler(new StopTagInputHandler(Tag.PixelData));
-                                DicomObject dcmobj = in.readDicomObject();
+                                DicomInputStream in = null;
+                                DicomObject dcmobj;
+                                try {
+                                    in = new DicomInputStream(destinationFile);
+                                    in.setHandler(new StopTagInputHandler(Tag.PixelData));
+                                    dcmobj = in.readDicomObject();
+                                } finally {
+                                    FileUtil.safeClose(in);
+                                }
                                 DicomObject patrec = dicomStruct.makePatientDirectoryRecord(dcmobj);
                                 DicomObject styrec = dicomStruct.makeStudyDirectoryRecord(dcmobj);
                                 DicomObject serrec = dicomStruct.makeSeriesDirectoryRecord(dcmobj);
@@ -306,7 +347,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                                     DicomImageElement midImage =
                                         ((DicomSeries) ((DefaultMutableTreeNode) node.getParent()).getUserObject())
                                             .getMedia(MediaSeries.MEDIA_POSITION.MIDDLE, null, null);
-                                    DicomObject seq = mkIconItem(midImage);
+                                    DicomObject seq = LocalExport.mkIconItem(midImage);
                                     if (seq != null) {
                                         serrec.putNestedDicomObject(Tag.IconImageSequence, seq);
                                     }
@@ -335,134 +376,13 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         }
     }
 
-    private static String toHex(int val) {
-        char[] ch8 = new char[8];
-        for (int i = 8; --i >= 0; val >>= 4) {
-            ch8[i] = HEX_DIGIT[val & 0xf];
-        }
-
-        return String.valueOf(ch8);
-    }
-
-    private static String makeFileIDs(String uid) {
-        return toHex(uid.hashCode());
-    }
-
-    private DicomObject mkIconItem(DicomImageElement image) {
-        if (image == null) {
-            return null;
-        }
-        BufferedImage thumbnail = null;
-        PlanarImage imgPl = image.getImage(null);
-        if (imgPl != null) {
-            RenderedImage img = image.getRenderedImage(imgPl);
-            final double scale = Math.min(128 / (double) img.getHeight(), 128 / (double) img.getWidth());
-            final PlanarImage thumb =
-                scale < 1.0 ? SubsampleAverageDescriptor.create(img, scale, scale, Thumbnail.DownScaleQualityHints)
-                    .getRendering() : PlanarImage.wrapRenderedImage(img);
-            thumbnail = thumb.getAsBufferedImage();
-        }
-        if (thumbnail == null) {
-            return null;
-        }
-        int w = thumbnail.getWidth();
-        int h = thumbnail.getHeight();
-
-        String pmi = (String) image.getTagValue(TagW.PhotometricInterpretation);
-        BufferedImage bi = thumbnail;
-        if (thumbnail.getColorModel().getColorSpace().getType() != ColorSpace.CS_GRAY) {
-            bi = convertBI(thumbnail, BufferedImage.TYPE_BYTE_INDEXED);
-            pmi = "PALETTE COLOR"; //$NON-NLS-1$
-        }
-
-        byte[] iconPixelData = new byte[w * h];
-        DicomObject iconItem = new BasicDicomObject();
-
-        if ("PALETTE COLOR".equals(pmi)) { //$NON-NLS-1$
-            IndexColorModel cm = (IndexColorModel) bi.getColorModel();
-            int[] lutDesc = { cm.getMapSize(), 0, 8 };
-            byte[] r = new byte[lutDesc[0]];
-            byte[] g = new byte[lutDesc[0]];
-            byte[] b = new byte[lutDesc[0]];
-            cm.getReds(r);
-            cm.getGreens(g);
-            cm.getBlues(b);
-            iconItem.putInts(Tag.RedPaletteColorLookupTableDescriptor, VR.US, lutDesc);
-            iconItem.putInts(Tag.GreenPaletteColorLookupTableDescriptor, VR.US, lutDesc);
-            iconItem.putInts(Tag.BluePaletteColorLookupTableDescriptor, VR.US, lutDesc);
-            iconItem.putBytes(Tag.RedPaletteColorLookupTableData, VR.OW, r, false);
-            iconItem.putBytes(Tag.GreenPaletteColorLookupTableData, VR.OW, g, false);
-            iconItem.putBytes(Tag.BluePaletteColorLookupTableData, VR.OW, b, false);
-
-            Raster raster = bi.getRaster();
-            for (int y = 0, i = 0; y < h; ++y) {
-                for (int x = 0; x < w; ++x, ++i) {
-                    iconPixelData[i] = (byte) raster.getSample(x, y, 0);
-                }
-            }
-        } else {
-            pmi = "MONOCHROME2"; //$NON-NLS-1$
-            for (int y = 0, i = 0; y < h; ++y) {
-                for (int x = 0; x < w; ++x, ++i) {
-                    iconPixelData[i] = (byte) bi.getRGB(x, y);
-                }
-            }
-        }
-        iconItem.putString(Tag.PhotometricInterpretation, VR.CS, pmi);
-        iconItem.putInt(Tag.Rows, VR.US, h);
-        iconItem.putInt(Tag.Columns, VR.US, w);
-        iconItem.putInt(Tag.SamplesPerPixel, VR.US, 1);
-        iconItem.putInt(Tag.BitsAllocated, VR.US, 8);
-        iconItem.putInt(Tag.BitsStored, VR.US, 8);
-        iconItem.putInt(Tag.HighBit, VR.US, 7);
-        iconItem.putBytes(Tag.PixelData, VR.OW, iconPixelData);
-        return iconItem;
-    }
-
-    private BufferedImage convertBI(BufferedImage src, int imageType) {
-        BufferedImage dst = new BufferedImage(src.getWidth(), src.getHeight(), imageType);
-        Graphics2D big = dst.createGraphics();
-        try {
-            big.drawImage(src, 0, 0, null);
-        } finally {
-            big.dispose();
-        }
-        return dst;
-    }
-
-    public static boolean writeCompressedImageFromDICOM(DicomImageElement dicom, File outputFolder, String extension) {
-        File file = new File(outputFolder, (String) dicom.getTagValue(TagW.SOPInstanceUID) + extension); //$NON-NLS-1$
-        if (file.exists() && !file.canWrite()) {
-            return false;
-        }
-        OutputStream os = null;
-        try {
-            os = new FileOutputStream(file);
-            DicomInputStream in = new DicomInputStream(dicom.getFile());
-            DicomObject dcmObj = in.readDicomObject();
-            DicomElement pixelDataDcmElement = dcmObj.get(Tag.PixelData);
-            byte[] pixelData = pixelDataDcmElement.getFragment(1);
-            os.write(pixelData);
-        } catch (OutOfMemoryError e) {
-            return false;
-        } catch (Exception ex) {
-            ex.printStackTrace();
-            return false;
-        } finally {
-            FileUtil.safeClose(os);
-        }
-        return true;
-    }
-
     private File makeISO(File exportDir) {
         boolean enableRockRidge = true;
         boolean enableJoliet = true;
 
-        // Output file
+        // ISO file
         File outfile = new File(exportDir.getParent(), exportDir.getName() + ".iso");
-
         // Directory hierarchy, starting from the root
-        ISO9660RootDirectory.MOVED_DIRECTORIES_STORE_NAME = "rr_moved";
         ISO9660RootDirectory root = new ISO9660RootDirectory();
 
         try {
@@ -471,7 +391,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 for (File file : files) {
                     if (file.exists()) {
                         if (file.isDirectory()) {
-                            root.addContentsRecursively(file);
+                            root.addRecursively(file);
                         } else {
                             root.addFile(file);
                         }
@@ -529,5 +449,102 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             e.printStackTrace();
         }
         return null;
+    }
+
+    // Methods that are in Weasis 2.0
+    // //////////////////////////////////////////////////////////////////////////////////////////////
+    public static File createTempDir() {
+        String baseName = String.valueOf(System.currentTimeMillis());
+
+        for (int counter = 0; counter < 1000; counter++) {
+            File tempDir = new File(BURN_DIR, baseName + counter);
+            if (tempDir.mkdir()) {
+                return tempDir;
+            }
+        }
+        throw new IllegalStateException("Failed to create directory"); //$NON-NLS-1$
+    }
+
+    public static void zip(File directory, File zipfile) throws IOException {
+        URI base = directory.toURI();
+        Deque<File> queue = new LinkedList<File>();
+        queue.push(directory);
+        OutputStream out = null;
+        ZipOutputStream zout = null;
+        try {
+            out = new FileOutputStream(zipfile);
+            zout = new ZipOutputStream(out);
+            while (!queue.isEmpty()) {
+                directory = queue.pop();
+                for (File entry : directory.listFiles()) {
+                    String name = base.relativize(entry.toURI()).getPath();
+                    if (entry.isDirectory()) {
+                        queue.push(entry);
+                        if (entry.list().length == 0) {
+                            name = name.endsWith("/") ? name : name + "/"; //$NON-NLS-1$ //$NON-NLS-2$
+                            zout.putNextEntry(new ZipEntry(name));
+                        }
+                    } else {
+                        zout.putNextEntry(new ZipEntry(name));
+                        copyZip(entry, zout);
+                        zout.closeEntry();
+                    }
+                }
+            }
+        } finally {
+            // Zip stream must be close before out stream.
+            FileUtil.safeClose(zout);
+            FileUtil.safeClose(out);
+        }
+    }
+
+    public static void unzip(File zipfile, File directory) throws IOException {
+        ZipFile zfile = new ZipFile(zipfile);
+        Enumeration<? extends ZipEntry> entries = zfile.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            File file = new File(directory, entry.getName());
+            if (entry.isDirectory()) {
+                file.mkdirs();
+            } else {
+                file.getParentFile().mkdirs();
+                InputStream in = zfile.getInputStream(entry);
+                try {
+                    copyZip(in, file);
+                } finally {
+                    in.close();
+                }
+            }
+        }
+    }
+
+    private static void copy(InputStream in, OutputStream out) throws IOException {
+        if (in == null || out == null) {
+            return;
+        }
+        byte[] buf = new byte[FileUtil.FILE_BUFFER];
+        int offset;
+        while ((offset = in.read(buf)) > 0) {
+            out.write(buf, 0, offset);
+        }
+        out.flush();
+    }
+
+    private static void copyZip(File file, OutputStream out) throws IOException {
+        InputStream in = new FileInputStream(file);
+        try {
+            copy(in, out);
+        } finally {
+            in.close();
+        }
+    }
+
+    private static void copyZip(InputStream in, File file) throws IOException {
+        OutputStream out = new FileOutputStream(file);
+        try {
+            copy(in, out);
+        } finally {
+            out.close();
+        }
     }
 }
