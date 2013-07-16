@@ -11,7 +11,7 @@
 	<artifactId>weasis-isowriter</artifactId>
 	<packaging>bundle</packaging>
 	<version>1.0-SNAPSHOT</version>
-	<name>${artifactId}</name>
+	<name>${project.artifactId}</name>
 	<description>Tool for creating and burning iso9660 image</description>
 	<build>
 		<plugins>

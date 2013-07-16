@@ -34,6 +34,7 @@ import java.util.zip.ZipOutputStream;
 
 import javax.swing.Box;
 import javax.swing.JCheckBox;
+import javax.swing.JFileChooser;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -53,12 +54,14 @@ import org.slf4j.LoggerFactory;
 import org.weasis.core.api.explorer.ObservableEvent;
 import org.weasis.core.api.gui.util.AbstractItemDialogPage;
 import org.weasis.core.api.gui.util.AbstractProperties;
+import org.weasis.core.api.gui.util.FileFormatFilter;
 import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaSeries;
 import org.weasis.core.api.media.data.TagW;
 import org.weasis.core.api.util.FileUtil;
 import org.weasis.dicom.codec.DicomImageElement;
 import org.weasis.dicom.codec.DicomSeries;
+import org.weasis.dicom.explorer.CheckTreeModel;
 import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExplorerTask;
 import org.weasis.dicom.explorer.ExportDicom;
@@ -85,14 +88,15 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     private final JCheckBox checkBoxCompression = new JCheckBox("Uncompressed DICOMs");
     private final DicomModel dicomModel;
     private final ExportTree exportTree;
+    private File outputFolder;
 
     private JPanel panel;
     private final Component horizontalStrut = Box.createHorizontalStrut(20);
 
-    public IsoImageExport(DicomModel dicomModel, ExportTree exportTree) {
+    public IsoImageExport(DicomModel dicomModel, CheckTreeModel treeModel) {
         super("Burn CD/DVD");
         this.dicomModel = dicomModel;
-        this.exportTree = exportTree;
+        this.exportTree = new ExportTree(treeModel);
         initGUI();
         initialize(true);
     }
@@ -142,8 +146,6 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             // TODO make local prefs? Add BuldlePreference
             checkBoxAddJpeg.setSelected(true);
             checkBoxAddWeasisViewer.setSelected(true);
-            TreePath rootPath = new TreePath(exportTree.getRootNode());
-            exportTree.getTree().addCheckingPath(rootPath);
         }
     }
 
@@ -168,19 +170,20 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     }
 
     @Override
-    public void exportDICOM(final ExportTree tree, JProgressBar info) throws IOException {
-
-        ExplorerTask task = new ExplorerTask("Burning...") { //$NON-NLS-1$
+    public void exportDICOM(final CheckTreeModel model, JProgressBar info) throws IOException {
+        browseImgFile();
+        if (outputFolder != null) {
+            final File exportFile = outputFolder.getCanonicalFile();
+            ExplorerTask task = new ExplorerTask("Exporting...") {
 
                 @Override
                 protected Boolean doInBackground() throws Exception {
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
                     File exportDir = createTempDir();
-                    writeDicom(exportDir, tree);
+                    writeDicom(exportDir, model);
                     if (checkBoxAddJpeg.isSelected()) {
-                        // TODO issue do not close stream!
-                        writeJpeg(new File(exportDir, "JPEG"), tree, true, 90);
+                        writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
                     }
                     if (checkBoxAddWeasisViewer.isSelected()) {
                         // TODO set dependency in Maven
@@ -190,7 +193,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                             unzip(file, exportDir);
                         }
                     }
-                    makeISO(exportDir);
+                    makeISO(exportDir, exportFile);
                     return true;
                 }
 
@@ -201,8 +204,29 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 }
 
             };
-        task.execute();
+            task.execute();
+        }
+    }
 
+    public void browseImgFile() {
+        //     String directory = Activator.IMPORT_EXPORT_PERSISTENCE.getProperty(LAST_DIR, "");//$NON-NLS-1$
+        if (outputFolder == null) {
+            outputFolder = new File(System.getProperty("user.home", ""), "cdrom-DICOM.iso");
+        }
+        JFileChooser fileChooser = new JFileChooser(outputFolder);
+        fileChooser.setDialogType(JFileChooser.SAVE_DIALOG);
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        fileChooser.setMultiSelectionEnabled(false);
+        FileFormatFilter.creatOneFilter(fileChooser, "iso", "ISO", false);
+        fileChooser.setCurrentDirectory(outputFolder);
+        File folder = null;
+        if (fileChooser.showOpenDialog(this) != 0 || (folder = fileChooser.getSelectedFile()) == null) {
+            outputFolder = null;
+            return;
+        } else {
+            outputFolder = folder;
+            // Activator.IMPORT_EXPORT_PERSISTENCE.setProperty(LAST_DIR, folder.getPath());
+        }
     }
 
     private String getinstanceFileName(DicomImageElement img) {
@@ -223,9 +247,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         return (String) img.getTagValue(TagW.SOPInstanceUID);
     }
 
-    private void writeJpeg(File exportDir, ExportTree tree, boolean keepNames, int jpegQuality) {
-        synchronized (tree) {
-            TreePath[] paths = tree.getTree().getCheckingPaths();
+    private void writeJpeg(File exportDir, CheckTreeModel model, boolean keepNames, int jpegQuality) {
+        synchronized (model) {
+            TreePath[] paths = model.getCheckingPaths();
             for (TreePath treePath : paths) {
                 DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
 
@@ -274,13 +298,15 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                     } else {
                         LOGGER.error("Cannot export DICOM file to jpeg: {}", img.getFile()); //$NON-NLS-1$
                     }
+                    // Prevent to many files open on Linux (Ubuntu => 1024) and close image stream
+                    img.removeImageFromCache();
                 }
             }
         }
 
     }
 
-    private void writeDicom(File exportDir, ExportTree tree) throws IOException {
+    private void writeDicom(File exportDir, CheckTreeModel model) throws IOException {
         ApplicationProfile dicomStruct = new StdGenJPEGApplicationProfile();
         DicomDirWriter writer = null;
         try {
@@ -294,9 +320,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 writer = new DicomDirWriter(dcmdirFile);
             }
 
-            synchronized (tree) {
+            synchronized (model) {
                 ArrayList<String> uids = new ArrayList<String>();
-                TreePath[] paths = tree.getTree().getCheckingPaths();
+                TreePath[] paths = model.getCheckingPaths();
                 for (TreePath treePath : paths) {
                     DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
 
@@ -376,12 +402,12 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         }
     }
 
-    private File makeISO(File exportDir) {
+    private File makeISO(File exportDir, File exportFile) {
         boolean enableRockRidge = true;
         boolean enableJoliet = true;
 
         // ISO file
-        File outfile = new File(exportDir.getParent(), exportDir.getName() + ".iso");
+        File outfile = exportFile;
         // Directory hierarchy, starting from the root
         ISO9660RootDirectory root = new ISO9660RootDirectory();
 
@@ -447,6 +473,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             e.printStackTrace();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
+        } finally {
+            FileUtil.recursiveDelete(exportDir);
         }
         return null;
     }
@@ -547,4 +575,6 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             out.close();
         }
     }
+
+    // //////////////////////////////////////////////////////////////////////////////////////////////
 }

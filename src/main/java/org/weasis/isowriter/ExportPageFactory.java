@@ -2,10 +2,10 @@ package org.weasis.isowriter;
 
 import java.util.Hashtable;
 
+import org.weasis.dicom.explorer.CheckTreeModel;
 import org.weasis.dicom.explorer.DicomExportFactory;
 import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExportDicom;
-import org.weasis.dicom.explorer.ExportTree;
 
 public class ExportPageFactory implements DicomExportFactory {
 
@@ -13,11 +13,11 @@ public class ExportPageFactory implements DicomExportFactory {
     public ExportDicom createDicomExportPage(Hashtable<String, Object> properties) {
         if (properties != null) {
             DicomModel dicomModel = (DicomModel) properties.get(DicomModel.class.getName());
-            if (dicomModel != null) {
-                return new IsoImageExport(dicomModel, new ExportTree(dicomModel));
+            CheckTreeModel treeModel = (CheckTreeModel) properties.get(CheckTreeModel.class.getName());
+            if (dicomModel != null && treeModel != null) {
+                return new IsoImageExport(dicomModel, treeModel);
             }
         }
         return null;
     }
-
 }
