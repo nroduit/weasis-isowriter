@@ -16,21 +16,18 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.image.RenderedImage;
+import java.io.BufferedInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URI;
+import java.net.URL;
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.Enumeration;
-import java.util.LinkedList;
+import java.util.Properties;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.zip.ZipOutputStream;
+import java.util.zip.ZipInputStream;
 
 import javax.swing.Box;
 import javax.swing.JCheckBox;
@@ -59,6 +56,7 @@ import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaSeries;
 import org.weasis.core.api.media.data.TagW;
 import org.weasis.core.api.util.FileUtil;
+import org.weasis.core.api.util.ResourceUtil;
 import org.weasis.dicom.codec.DicomImageElement;
 import org.weasis.dicom.codec.DicomSeries;
 import org.weasis.dicom.explorer.CheckTreeModel;
@@ -82,13 +80,16 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     private static final Logger LOGGER = LoggerFactory.getLogger(IsoImageExport.class);
 
     private static final File BURN_DIR = AbstractProperties.buildAccessibleTempDirecotry("burn");
+    private static final String LAST_FOLDER = "last_folder";
+    private static final String ADD_JPEG = "add_jpeg";
+    private static final String ADD_VIEWER = "add_viewer";
 
     private final JCheckBox checkBoxAddWeasisViewer = new JCheckBox("Add Weasis viewer");
     private final JCheckBox checkBoxAddJpeg = new JCheckBox("Add JPEG images");
     private final JCheckBox checkBoxCompression = new JCheckBox("Uncompressed DICOMs");
     private final DicomModel dicomModel;
     private final ExportTree exportTree;
-    private File outputFolder;
+    private File outputFile;
 
     private JPanel panel;
     private final Component horizontalStrut = Box.createHorizontalStrut(20);
@@ -143,9 +144,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
 
     protected void initialize(boolean afirst) {
         if (afirst) {
-            // TODO make local prefs? Add BuldlePreference
-            checkBoxAddJpeg.setSelected(true);
-            checkBoxAddWeasisViewer.setSelected(true);
+            Properties pref = ExportIsoFactory.EXPORT_PERSISTENCE;
+            checkBoxAddJpeg.setSelected(Boolean.valueOf(pref.getProperty(ADD_JPEG, "true")));
+            checkBoxAddWeasisViewer.setSelected(Boolean.valueOf(pref.getProperty(ADD_VIEWER, "true")));
         }
     }
 
@@ -172,8 +173,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     @Override
     public void exportDICOM(final CheckTreeModel model, JProgressBar info) throws IOException {
         browseImgFile();
-        if (outputFolder != null) {
-            final File exportFile = outputFolder.getCanonicalFile();
+        if (outputFile != null) {
+            final File exportFile = outputFile.getCanonicalFile();
             ExplorerTask task = new ExplorerTask("Exporting...") {
 
                 @Override
@@ -186,19 +187,24 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
                     }
                     if (checkBoxAddWeasisViewer.isSelected()) {
-                        // TODO set dependency in Maven
-                        String path = "/home/nicolas/Share Apps/DICOM/Weasis/1.2.5/weasis-portable.zip";
-                        File file = new File(path);
-                        if (file.canRead()) {
-                            unzip(file, exportDir);
+                        URL url = ResourceUtil.getResourceURL("lib/weasis-distributions.zip", this.getClass());
+                        if (url == null) {
+                            LOGGER.error("Cannot find the embedded portable distribution");
+                        } else {
+                            unzip(url.openStream(), exportDir);
                         }
                     }
                     makeISO(exportDir, exportFile);
+
                     return true;
                 }
 
                 @Override
                 protected void done() {
+                    Properties pref = ExportIsoFactory.EXPORT_PERSISTENCE;
+                    pref.setProperty(ADD_JPEG, String.valueOf(checkBoxAddJpeg.isSelected()));
+                    pref.setProperty(ADD_VIEWER, String.valueOf(checkBoxAddWeasisViewer.isSelected()));
+
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStop,
                         dicomModel, null, this));
                 }
@@ -209,23 +215,24 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     }
 
     public void browseImgFile() {
-        //     String directory = Activator.IMPORT_EXPORT_PERSISTENCE.getProperty(LAST_DIR, "");//$NON-NLS-1$
-        if (outputFolder == null) {
-            outputFolder = new File(System.getProperty("user.home", ""), "cdrom-DICOM.iso");
+        String lastFolder = ExportIsoFactory.EXPORT_PERSISTENCE.getProperty(LAST_FOLDER, null);//$NON-NLS-1$
+        if (lastFolder == null) {
+            lastFolder = System.getProperty("user.home", "");
         }
-        JFileChooser fileChooser = new JFileChooser(outputFolder);
-        fileChooser.setDialogType(JFileChooser.SAVE_DIALOG);
+        outputFile = new File(lastFolder, "cdrom-DICOM.iso");
+
+        JFileChooser fileChooser = new JFileChooser(outputFile);
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         fileChooser.setMultiSelectionEnabled(false);
         FileFormatFilter.creatOneFilter(fileChooser, "iso", "ISO", false);
-        fileChooser.setCurrentDirectory(outputFolder);
-        File folder = null;
-        if (fileChooser.showOpenDialog(this) != 0 || (folder = fileChooser.getSelectedFile()) == null) {
-            outputFolder = null;
+        fileChooser.setSelectedFile(outputFile);
+        File file = null;
+        if (fileChooser.showSaveDialog(this) != 0 || (file = fileChooser.getSelectedFile()) == null) {
+            outputFile = null;
             return;
         } else {
-            outputFolder = folder;
-            // Activator.IMPORT_EXPORT_PERSISTENCE.setProperty(LAST_DIR, folder.getPath());
+            outputFile = file;
+            ExportIsoFactory.EXPORT_PERSISTENCE.setProperty(LAST_FOLDER, file.getParent());
         }
     }
 
@@ -493,57 +500,24 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         throw new IllegalStateException("Failed to create directory"); //$NON-NLS-1$
     }
 
-    public static void zip(File directory, File zipfile) throws IOException {
-        URI base = directory.toURI();
-        Deque<File> queue = new LinkedList<File>();
-        queue.push(directory);
-        OutputStream out = null;
-        ZipOutputStream zout = null;
+    // TODO should be add in weasis 2.0
+    public static void unzip(InputStream inputStream, File directory) throws IOException {
+        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(inputStream));
         try {
-            out = new FileOutputStream(zipfile);
-            zout = new ZipOutputStream(out);
-            while (!queue.isEmpty()) {
-                directory = queue.pop();
-                for (File entry : directory.listFiles()) {
-                    String name = base.relativize(entry.toURI()).getPath();
-                    if (entry.isDirectory()) {
-                        queue.push(entry);
-                        if (entry.list().length == 0) {
-                            name = name.endsWith("/") ? name : name + "/"; //$NON-NLS-1$ //$NON-NLS-2$
-                            zout.putNextEntry(new ZipEntry(name));
-                        }
-                    } else {
-                        zout.putNextEntry(new ZipEntry(name));
-                        copyZip(entry, zout);
-                        zout.closeEntry();
-                    }
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                File file = new File(directory, entry.getName());
+                if (entry.isDirectory()) {
+                    file.mkdirs();
+                } else {
+                    file.getParentFile().mkdirs();
+                    copyZip(zis, file);
                 }
             }
         } finally {
-            // Zip stream must be close before out stream.
-            FileUtil.safeClose(zout);
-            FileUtil.safeClose(out);
+            FileUtil.safeClose(zis);
         }
-    }
 
-    public static void unzip(File zipfile, File directory) throws IOException {
-        ZipFile zfile = new ZipFile(zipfile);
-        Enumeration<? extends ZipEntry> entries = zfile.entries();
-        while (entries.hasMoreElements()) {
-            ZipEntry entry = entries.nextElement();
-            File file = new File(directory, entry.getName());
-            if (entry.isDirectory()) {
-                file.mkdirs();
-            } else {
-                file.getParentFile().mkdirs();
-                InputStream in = zfile.getInputStream(entry);
-                try {
-                    copyZip(in, file);
-                } finally {
-                    in.close();
-                }
-            }
-        }
     }
 
     private static void copy(InputStream in, OutputStream out) throws IOException {
@@ -556,15 +530,6 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             out.write(buf, 0, offset);
         }
         out.flush();
-    }
-
-    private static void copyZip(File file, OutputStream out) throws IOException {
-        InputStream in = new FileInputStream(file);
-        try {
-            copy(in, out);
-        } finally {
-            in.close();
-        }
     }
 
     private static void copyZip(InputStream in, File file) throws IOException {

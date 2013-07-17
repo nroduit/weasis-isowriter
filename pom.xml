@@ -21,6 +21,8 @@
 				<configuration>
 					<instructions>
 						<Service-Component>OSGI-INF/export.xml</Service-Component>
+						<Embed-Dependency>*;scope=compile;inline=true,weasis-distributions;scope=runtime;inline=false</Embed-Dependency>
+						<Embed-StripVersion>true</Embed-StripVersion>
 					</instructions>
 				</configuration>
 			</plugin>
@@ -60,6 +62,13 @@
 			<groupId>com.github.stephenc.java-iso-tools</groupId>
 			<artifactId>sabre</artifactId>
 			<version>2.0.1-SNAPSHOT</version>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis</groupId>
+			<artifactId>weasis-distributions</artifactId>
+			<version>1.2.6-beta</version>
+			<scope>runtime</scope>
+			<type>zip</type>
 		</dependency>
 	</dependencies>
 </project>
