@@ -268,11 +268,11 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                     if (keepNames) {
                         TreeNode[] objects = node.getPath();
                         if (objects.length > 3) {
-                            buffer.append(FileUtil.getValidFileName(objects[1].toString()));
+                            buffer.append(FileUtil.getValidFileNameWithoutHTML(objects[1].toString()));
                             buffer.append(File.separator);
-                            buffer.append(FileUtil.getValidFileName(objects[2].toString()));
+                            buffer.append(FileUtil.getValidFileNameWithoutHTML(objects[2].toString()));
                             buffer.append(File.separator);
-                            String seriesName = FileUtil.getValidFileName(objects[3].toString());
+                            String seriesName = FileUtil.getValidFileNameWithoutHTML(objects[3].toString());
                             if (seriesName.length() > 30) {
                                 buffer.append(seriesName, 0, 27);
                                 buffer.append("...");
