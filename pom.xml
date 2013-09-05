@@ -13,6 +13,13 @@
 	<version>1.1-SNAPSHOT</version>
 	<name>${project.artifactId}</name>
 	<description>Tool for creating and burning iso9660 image</description>
+	
+	<scm>
+		<connection>scm:git:git@github.com:nroduit/weasis-isowriter.git</connection>
+		<developerConnection>scm:git:https://github.com/nroduit/weasis-isowriter.git</developerConnection>
+		<url>https://github.com/nroduit/weasis-isowriter</url>
+	</scm>
+	
 	<build>
 		<plugins>
 			<plugin>
