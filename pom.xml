@@ -9,7 +9,7 @@
 	</parent>
 	<artifactId>weasis-isowriter</artifactId>
 	<packaging>bundle</packaging>
-	<version>1.1</version>
+	<version>1.2-SNAPSHOT</version>
 	<name>${project.artifactId}</name>
 	<description>Tool for creating and burning iso9660 image</description>
 	
