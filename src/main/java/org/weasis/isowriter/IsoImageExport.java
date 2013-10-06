@@ -16,18 +16,12 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.image.RenderedImage;
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Properties;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import javax.swing.Box;
 import javax.swing.JCheckBox;
@@ -38,14 +32,12 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import org.dcm4che2.data.DicomObject;
-import org.dcm4che2.data.Tag;
-import org.dcm4che2.io.DicomInputStream;
-import org.dcm4che2.io.StopTagInputHandler;
-import org.dcm4che2.media.ApplicationProfile;
-import org.dcm4che2.media.DicomDirWriter;
-import org.dcm4che2.media.FileSetInformation;
-import org.dcm4che2.media.StdGenJPEGApplicationProfile;
+import org.dcm4che.data.Attributes;
+import org.dcm4che.data.Tag;
+import org.dcm4che.data.UID;
+import org.dcm4che.data.VR;
+import org.dcm4che.media.DicomDirWriter;
+import org.dcm4che.media.RecordType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.api.explorer.ObservableEvent;
@@ -58,8 +50,10 @@ import org.weasis.core.api.media.data.TagW;
 import org.weasis.core.api.util.FileUtil;
 import org.weasis.core.api.util.ResourceUtil;
 import org.weasis.dicom.codec.DicomImageElement;
+import org.weasis.dicom.codec.DicomMediaIO;
 import org.weasis.dicom.codec.DicomSeries;
 import org.weasis.dicom.explorer.CheckTreeModel;
+import org.weasis.dicom.explorer.DicomDirLoader;
 import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExplorerTask;
 import org.weasis.dicom.explorer.ExportDicom;
@@ -79,7 +73,6 @@ import com.github.stephenc.javaisotools.sabre.StreamHandler;
 public class IsoImageExport extends AbstractItemDialogPage implements ExportDicom {
     private static final Logger LOGGER = LoggerFactory.getLogger(IsoImageExport.class);
 
-    private static final File BURN_DIR = AbstractProperties.buildAccessibleTempDirecotry("burn");
     private static final String LAST_FOLDER = "last_folder";
     private static final String ADD_JPEG = "add_jpeg";
     private static final String ADD_VIEWER = "add_viewer";
@@ -181,7 +174,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 protected Boolean doInBackground() throws Exception {
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
-                    File exportDir = createTempDir();
+                    File exportDir =
+                        FileUtil.createTempDir(AbstractProperties.buildAccessibleTempDirecotry("tmp", "burn"));
                     writeDicom(exportDir, model);
                     if (checkBoxAddJpeg.isSelected()) {
                         writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
@@ -191,7 +185,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         if (url == null) {
                             LOGGER.error("Cannot find the embedded portable distribution");
                         } else {
-                            unzip(url.openStream(), exportDir);
+                            FileUtil.unzip(url.openStream(), exportDir);
                         }
                     }
                     makeISO(exportDir, exportFile);
@@ -314,23 +308,15 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     }
 
     private void writeDicom(File exportDir, CheckTreeModel model) throws IOException {
-        ApplicationProfile dicomStruct = new StdGenJPEGApplicationProfile();
         DicomDirWriter writer = null;
         try {
-
             File dcmdirFile = new File(exportDir, "DICOMDIR"); //$NON-NLS-1$
-            if (dcmdirFile.createNewFile()) {
-                FileSetInformation fsinfo = new FileSetInformation();
-                fsinfo.init();
-                writer = new DicomDirWriter(dcmdirFile, fsinfo);
-            } else {
-                writer = new DicomDirWriter(dcmdirFile);
-            }
+            writer = DicomDirLoader.open(dcmdirFile);
 
             synchronized (model) {
                 ArrayList<String> uids = new ArrayList<String>();
                 TreePath[] paths = model.getCheckingPaths();
-                for (TreePath treePath : paths) {
+                TreePath: for (TreePath treePath : paths) {
                     DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
 
                     if (node.getUserObject() instanceof DicomImageElement) {
@@ -356,44 +342,79 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         iuid = LocalExport.makeFileIDs(iuid);
 
                         File destinationDir = new File(exportDir, buffer.toString());
-                        boolean newSeries = destinationDir.mkdirs();
+                        destinationDir.mkdirs();
 
                         File destinationFile = new File(destinationDir, iuid);
                         if (FileUtil.nioCopyFile(img.getFile(), destinationFile)) {
                             if (writer != null) {
-                                DicomInputStream in = null;
-                                DicomObject dcmobj;
-                                try {
-                                    in = new DicomInputStream(destinationFile);
-                                    in.setHandler(new StopTagInputHandler(Tag.PixelData));
-                                    dcmobj = in.readDicomObject();
-                                } finally {
-                                    FileUtil.safeClose(in);
+                                Attributes fmi = null;
+                                Attributes dataset = null;
+                                DicomMediaIO dicomImageLoader = (DicomMediaIO) img.getMediaReader();
+                                dataset = dicomImageLoader.getDicomObject();
+                                if (dataset == null) {
+                                    LOGGER.error("Cannot export DICOM file: ", img.getFile()); //$NON-NLS-1$
+                                    continue TreePath;
                                 }
-                                DicomObject patrec = dicomStruct.makePatientDirectoryRecord(dcmobj);
-                                DicomObject styrec = dicomStruct.makeStudyDirectoryRecord(dcmobj);
-                                DicomObject serrec = dicomStruct.makeSeriesDirectoryRecord(dcmobj);
+                                fmi = dataset.createFileMetaInformation(UID.ImplicitVRLittleEndian);
 
-                                // Icon Image Sequence (0088,0200).This Icon Image is representative of the Series. It
-                                // may or may not correspond to one of the images of the Series.
-                                if (newSeries && node.getParent() instanceof DefaultMutableTreeNode) {
-                                    DicomImageElement midImage =
-                                        ((DicomSeries) ((DefaultMutableTreeNode) node.getParent()).getUserObject())
-                                            .getMedia(MediaSeries.MEDIA_POSITION.MIDDLE, null, null);
-                                    DicomObject seq = LocalExport.mkIconItem(midImage);
-                                    if (seq != null) {
-                                        serrec.putNestedDicomObject(Tag.IconImageSequence, seq);
+                                String miuid = fmi.getString(Tag.MediaStorageSOPInstanceUID, null);
+
+                                String pid = dataset.getString(Tag.PatientID, null);
+                                String styuid = dataset.getString(Tag.StudyInstanceUID, null);
+                                String seruid = dataset.getString(Tag.SeriesInstanceUID, null);
+
+                                if (styuid != null && seruid != null) {
+                                    if (pid == null) {
+                                        dataset.setString(Tag.PatientID, VR.LO, pid = styuid);
                                     }
-                                }
-
-                                DicomObject instrec =
-                                    dicomStruct.makeInstanceDirectoryRecord(dcmobj, writer.toFileID(destinationFile));
-                                DicomObject rec = writer.addPatientRecord(patrec);
-                                rec = writer.addStudyRecord(rec, styrec);
-                                rec = writer.addSeriesRecord(rec, serrec);
-                                String miuid = dcmobj.getString(Tag.MediaStorageSOPInstanceUID);
-                                if (writer.findInstanceRecord(rec, miuid) == null) {
-                                    writer.addChildRecord(rec, instrec);
+                                    Attributes patRec = writer.findPatientRecord(pid);
+                                    if (patRec == null) {
+                                        patRec =
+                                            DicomDirLoader.RecordFactory.createRecord(RecordType.PATIENT, null,
+                                                dataset, null, null);
+                                        writer.addRootDirectoryRecord(patRec);
+                                    }
+                                    Attributes studyRec = writer.findStudyRecord(patRec, styuid);
+                                    if (studyRec == null) {
+                                        studyRec =
+                                            DicomDirLoader.RecordFactory.createRecord(RecordType.STUDY, null, dataset,
+                                                null, null);
+                                        writer.addLowerDirectoryRecord(patRec, studyRec);
+                                    }
+                                    Attributes seriesRec = writer.findSeriesRecord(studyRec, seruid);
+                                    if (seriesRec == null) {
+                                        seriesRec =
+                                            DicomDirLoader.RecordFactory.createRecord(RecordType.SERIES, null, dataset,
+                                                null, null);
+                                        // Icon Image Sequence (0088,0200).This Icon Image is representative of the
+                                        // Series.
+                                        // It may or may not correspond to one of the images of the Series.
+                                        if (seriesRec != null && node.getParent() instanceof DefaultMutableTreeNode) {
+                                            DicomImageElement midImage =
+                                                ((DicomSeries) ((DefaultMutableTreeNode) node.getParent())
+                                                    .getUserObject()).getMedia(MediaSeries.MEDIA_POSITION.MIDDLE, null,
+                                                    null);
+                                            Attributes iconItem = LocalExport.mkIconItem(midImage);
+                                            if (iconItem != null) {
+                                                seriesRec.newSequence(Tag.IconImageSequence, 1).add(iconItem);
+                                            }
+                                        }
+                                        writer.addLowerDirectoryRecord(studyRec, seriesRec);
+                                    }
+                                    Attributes instRec;
+                                    if (writer.findLowerInstanceRecord(seriesRec, false, iuid) == null) {
+                                        instRec =
+                                            DicomDirLoader.RecordFactory.createRecord(dataset, fmi,
+                                                writer.toFileIDs(destinationFile));
+                                        writer.addLowerDirectoryRecord(seriesRec, instRec);
+                                    }
+                                } else {
+                                    if (writer.findRootInstanceRecord(false, miuid) == null) {
+                                        Attributes instRec =
+                                            DicomDirLoader.RecordFactory.createRecord(dataset, fmi,
+                                                writer.toFileIDs(destinationFile));
+                                        writer.addRootDirectoryRecord(instRec);
+                                    }
                                 }
                             }
                         } else {
@@ -486,60 +507,4 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         return null;
     }
 
-    // Methods that are in Weasis 2.0
-    // //////////////////////////////////////////////////////////////////////////////////////////////
-    public static File createTempDir() {
-        String baseName = String.valueOf(System.currentTimeMillis());
-
-        for (int counter = 0; counter < 1000; counter++) {
-            File tempDir = new File(BURN_DIR, baseName + counter);
-            if (tempDir.mkdir()) {
-                return tempDir;
-            }
-        }
-        throw new IllegalStateException("Failed to create directory"); //$NON-NLS-1$
-    }
-
-    // TODO should be add in weasis 2.0
-    public static void unzip(InputStream inputStream, File directory) throws IOException {
-        ZipInputStream zis = new ZipInputStream(new BufferedInputStream(inputStream));
-        try {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                File file = new File(directory, entry.getName());
-                if (entry.isDirectory()) {
-                    file.mkdirs();
-                } else {
-                    file.getParentFile().mkdirs();
-                    copyZip(zis, file);
-                }
-            }
-        } finally {
-            FileUtil.safeClose(zis);
-        }
-
-    }
-
-    private static void copy(InputStream in, OutputStream out) throws IOException {
-        if (in == null || out == null) {
-            return;
-        }
-        byte[] buf = new byte[FileUtil.FILE_BUFFER];
-        int offset;
-        while ((offset = in.read(buf)) > 0) {
-            out.write(buf, 0, offset);
-        }
-        out.flush();
-    }
-
-    private static void copyZip(InputStream in, File file) throws IOException {
-        OutputStream out = new FileOutputStream(file);
-        try {
-            copy(in, out);
-        } finally {
-            out.close();
-        }
-    }
-
-    // //////////////////////////////////////////////////////////////////////////////////////////////
 }
