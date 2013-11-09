@@ -175,7 +175,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
                     File exportDir =
-                        FileUtil.createTempDir(AbstractProperties.buildAccessibleTempDirecotry("tmp", "burn"));
+                        FileUtil.createTempDir(AbstractProperties.buildAccessibleTempDirectory("tmp", "burn"));
                     writeDicom(exportDir, model);
                     if (checkBoxAddJpeg.isSelected()) {
                         writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
