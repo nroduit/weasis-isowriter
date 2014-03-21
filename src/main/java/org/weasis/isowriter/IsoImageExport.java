@@ -32,12 +32,12 @@ import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 
-import org.dcm4che.data.Attributes;
-import org.dcm4che.data.Tag;
-import org.dcm4che.data.UID;
-import org.dcm4che.data.VR;
-import org.dcm4che.media.DicomDirWriter;
-import org.dcm4che.media.RecordType;
+import org.dcm4che3.data.Attributes;
+import org.dcm4che3.data.Tag;
+import org.dcm4che3.data.UID;
+import org.dcm4che3.data.VR;
+import org.dcm4che3.media.DicomDirWriter;
+import org.dcm4che3.media.RecordType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.api.explorer.ObservableEvent;
@@ -168,7 +168,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         browseImgFile();
         if (outputFile != null) {
             final File exportFile = outputFile.getCanonicalFile();
-            ExplorerTask task = new ExplorerTask("Exporting...") {
+            ExplorerTask task = new ExplorerTask("Exporting...", false) {
 
                 @Override
                 protected Boolean doInBackground() throws Exception {
@@ -218,7 +218,10 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         JFileChooser fileChooser = new JFileChooser(outputFile);
         fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         fileChooser.setMultiSelectionEnabled(false);
-        FileFormatFilter.creatOneFilter(fileChooser, "iso", "ISO", false);
+        FileFormatFilter filter = new FileFormatFilter("iso", "ISO");
+        fileChooser.addChoosableFileFilter(filter);
+        fileChooser.setFileFilter(filter);
+
         fileChooser.setSelectedFile(outputFile);
         File file = null;
         if (fileChooser.showSaveDialog(this) != 0 || (file = fileChooser.getSelectedFile()) == null) {

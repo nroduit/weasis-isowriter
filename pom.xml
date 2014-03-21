@@ -1,24 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
 		<artifactId>weasis-parent</artifactId>
 		<groupId>org.weasis</groupId>
-		<version>1.16</version>
+		<version>1.18</version>
 	</parent>
 	<artifactId>weasis-isowriter</artifactId>
 	<packaging>bundle</packaging>
 	<version>1.2-SNAPSHOT</version>
 	<name>${project.artifactId}</name>
 	<description>Tool for creating and burning iso9660 image</description>
-	
+
 	<scm>
 		<connection>scm:git:git@github.com:nroduit/weasis-isowriter.git</connection>
 		<developerConnection>scm:git:https://github.com/nroduit/weasis-isowriter.git</developerConnection>
 		<url>https://github.com/nroduit/weasis-isowriter</url>
 	</scm>
-	
+	<repositories>
+		<repository>
+			<id>weasis</id>
+			<url>http://dicom.vital-it.ch:8087/nexus/content/groups/public</url>
+		</repository>
+	</repositories>
 	<build>
 		<plugins>
 			<plugin>
@@ -72,7 +78,7 @@
 		<dependency>
 			<groupId>org.weasis</groupId>
 			<artifactId>weasis-distributions</artifactId>
-			<version>1.2.6</version>
+			<version>1.2.8</version>
 			<scope>runtime</scope>
 			<type>zip</type>
 		</dependency>
