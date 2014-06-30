@@ -42,7 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.api.explorer.ObservableEvent;
 import org.weasis.core.api.gui.util.AbstractItemDialogPage;
-import org.weasis.core.api.gui.util.AbstractProperties;
+import org.weasis.core.api.gui.util.AppProperties;
 import org.weasis.core.api.gui.util.FileFormatFilter;
 import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaSeries;
@@ -174,8 +174,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 protected Boolean doInBackground() throws Exception {
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
-                    File exportDir =
-                        FileUtil.createTempDir(AbstractProperties.buildAccessibleTempDirectory("tmp", "burn"));
+                    File exportDir = FileUtil.createTempDir(AppProperties.buildAccessibleTempDirectory("tmp", "burn"));
                     writeDicom(exportDir, model);
                     if (checkBoxAddJpeg.isSelected()) {
                         writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
