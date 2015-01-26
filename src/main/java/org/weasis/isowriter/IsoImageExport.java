@@ -175,9 +175,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                     dicomModel.firePropertyChange(new ObservableEvent(ObservableEvent.BasicAction.LoadingStart,
                         dicomModel, null, this));
                     File exportDir = FileUtil.createTempDir(AppProperties.buildAccessibleTempDirectory("tmp", "burn"));
-                    writeDicom(exportDir, model);
+                    writeDicom(this, exportDir, model);
                     if (checkBoxAddJpeg.isSelected()) {
-                        writeJpeg(new File(exportDir, "JPEG"), model, true, 90);
+                        writeJpeg(this, new File(exportDir, "JPEG"), model, true, 90);
                     }
                     if (checkBoxAddWeasisViewer.isSelected()) {
                         URL url = ResourceUtil.getResourceURL("lib/weasis-distributions.zip", this.getClass());
@@ -186,6 +186,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         } else {
                             FileUtil.unzip(url.openStream(), exportDir);
                         }
+                    }
+                    if (this.isCancelled()) {
+                        return false;
                     }
                     makeISO(exportDir, exportFile);
 
@@ -208,7 +211,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
     }
 
     public void browseImgFile() {
-        String lastFolder = ExportIsoFactory.EXPORT_PERSISTENCE.getProperty(LAST_FOLDER, null);//$NON-NLS-1$
+        String lastFolder = ExportIsoFactory.EXPORT_PERSISTENCE.getProperty(LAST_FOLDER, null);
         if (lastFolder == null) {
             lastFolder = System.getProperty("user.home", "");
         }
@@ -250,10 +253,13 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         return (String) img.getTagValue(TagW.SOPInstanceUID);
     }
 
-    private void writeJpeg(File exportDir, CheckTreeModel model, boolean keepNames, int jpegQuality) {
+    private void writeJpeg(ExplorerTask task, File exportDir, CheckTreeModel model, boolean keepNames, int jpegQuality) {
         synchronized (model) {
             TreePath[] paths = model.getCheckingPaths();
             for (TreePath treePath : paths) {
+                if (task.isCancelled()) {
+                    return;
+                }
                 DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
 
                 if (node.getUserObject() instanceof DicomImageElement) {
@@ -309,7 +315,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
 
     }
 
-    private void writeDicom(File exportDir, CheckTreeModel model) throws IOException {
+    private void writeDicom(ExplorerTask task, File exportDir, CheckTreeModel model) throws IOException {
         DicomDirWriter writer = null;
         try {
             File dcmdirFile = new File(exportDir, "DICOMDIR"); //$NON-NLS-1$
@@ -319,6 +325,9 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 ArrayList<String> uids = new ArrayList<String>();
                 TreePath[] paths = model.getCheckingPaths();
                 TreePath: for (TreePath treePath : paths) {
+                    if (task.isCancelled()) {
+                        return;
+                    }
                     DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
 
                     if (node.getUserObject() instanceof DicomImageElement) {
