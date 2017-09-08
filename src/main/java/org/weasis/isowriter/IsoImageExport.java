@@ -1,10 +1,10 @@
 /*******************************************************************************
- * Copyright (c) 2010 Nicolas Roduit.
+ * Copyright (c) 2016 Weasis Team and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-v10.html
- * 
+ *
  * Contributors:
  *     Nicolas Roduit - initial API and implementation
  ******************************************************************************/
@@ -52,7 +52,6 @@ import org.weasis.core.api.explorer.ObservableEvent;
 import org.weasis.core.api.gui.util.AbstractItemDialogPage;
 import org.weasis.core.api.gui.util.AppProperties;
 import org.weasis.core.api.gui.util.FileFormatFilter;
-import org.weasis.core.api.gui.util.JMVUtils;
 import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaElement;
 import org.weasis.core.api.media.data.MediaSeries;
@@ -60,6 +59,7 @@ import org.weasis.core.api.media.data.Series;
 import org.weasis.core.api.media.data.TagW;
 import org.weasis.core.api.media.data.Thumbnail;
 import org.weasis.core.api.util.FileUtil;
+import org.weasis.core.api.util.LangUtil;
 import org.weasis.core.api.util.ResourceUtil;
 import org.weasis.core.api.util.StringUtil;
 import org.weasis.core.api.util.StringUtil.Suffix;
@@ -75,7 +75,7 @@ import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExplorerTask;
 import org.weasis.dicom.explorer.ExportDicom;
 import org.weasis.dicom.explorer.ExportTree;
-import org.weasis.dicom.explorer.pr.PrSerializer;
+import org.weasis.dicom.explorer.pr.DicomPrSerializer;
 
 import com.github.stephenc.javaisotools.iso9660.ConfigException;
 import com.github.stephenc.javaisotools.iso9660.ISO9660RootDirectory;
@@ -276,14 +276,14 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         int jpegQuality) {
 
         try {
-            synchronized (model) {
+            synchronized (exportTree) {
                 ArrayList<String> seriesGph = new ArrayList<>();
                 TreePath[] paths = model.getCheckingPaths();
                 for (TreePath treePath : paths) {
                     DefaultMutableTreeNode node = (DefaultMutableTreeNode) treePath.getLastPathComponent();
                     if (node.getUserObject() instanceof Series) {
                         MediaSeries<?> s = (MediaSeries<?>) node.getUserObject();
-                        if (JMVUtils.getNULLtoFalse(s.getTagValue(TagW.ObjectToSave))) {
+                        if (LangUtil.getNULLtoFalse((Boolean) s.getTagValue(TagW.ObjectToSave))) {
                             Series<?> series = (Series<?>) s.getTagValue(CheckTreeModel.SourceSeriesForPR);
                             if (series != null) {
                                 seriesGph.add((String) series.getTagValue(TagD.get(Tag.SeriesInstanceUID)));
@@ -364,7 +364,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 writer = DicomDirLoader.open(dcmdirFile);
             }
 
-            synchronized (model) {
+            synchronized (exportTree) {
                 ArrayList<String> uids = new ArrayList<>();
                 TreePath[] paths = model.getCheckingPaths();
                 for (TreePath treePath : paths) {
@@ -415,7 +415,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         }
                     } else if (node.getUserObject() instanceof Series) {
                         MediaSeries<?> s = (MediaSeries<?>) node.getUserObject();
-                        if (JMVUtils.getNULLtoFalse(s.getTagValue(TagW.ObjectToSave))) {
+                        if (LangUtil.getNULLtoFalse((Boolean) s.getTagValue(TagW.ObjectToSave))) {
                             Series<?> series = (Series<?>) s.getTagValue(CheckTreeModel.SourceSeriesForPR);
                             if (series != null) {
                                 String seriesInstanceUID = UIDUtils.createUID();
@@ -455,7 +455,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                 File outputFile = new File(destinationDir, keepNames ? prUid : makeFileIDs(prUid));
                 destinationDir.mkdirs();
                 Attributes prAttributes =
-                    PrSerializer.writePresentation(grModel, imgAttributes, outputFile, seriesInstanceUID, prUid);
+                    DicomPrSerializer.writePresentation(grModel, imgAttributes, outputFile, seriesInstanceUID, prUid);
                 if (prAttributes != null) {
                     try {
                         writeInDicomDir(writer, prAttributes, node, outputFile.getName(), outputFile);
