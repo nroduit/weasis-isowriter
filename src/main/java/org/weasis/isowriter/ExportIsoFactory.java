@@ -4,12 +4,9 @@ import java.io.File;
 import java.util.Hashtable;
 import java.util.Properties;
 
-import org.apache.felix.scr.annotations.Activate;
-import org.apache.felix.scr.annotations.Component;
-import org.apache.felix.scr.annotations.Deactivate;
-import org.apache.felix.scr.annotations.Property;
-import org.apache.felix.scr.annotations.Service;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Deactivate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.api.service.BundlePreferences;
@@ -19,9 +16,8 @@ import org.weasis.dicom.explorer.DicomExportFactory;
 import org.weasis.dicom.explorer.DicomModel;
 import org.weasis.dicom.explorer.ExportDicom;
 
-@Component(immediate = false)
-@Service
-@Property(name = "service.name", value = "Exporting ISO image")
+
+@org.osgi.service.component.annotations.Component(service = DicomExportFactory.class, immediate = false)
 public class ExportIsoFactory implements DicomExportFactory {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ExportIsoFactory.class);
