@@ -12,15 +12,13 @@ package org.weasis.isowriter;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
-import java.awt.Graphics2D;
+import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.color.ColorSpace;
 import java.awt.image.BufferedImage;
 import java.awt.image.IndexColorModel;
 import java.awt.image.Raster;
-import java.awt.image.RenderedImage;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -28,8 +26,6 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Properties;
 
-import javax.media.jai.PlanarImage;
-import javax.media.jai.operator.SubsampleAverageDescriptor;
 import javax.swing.Box;
 import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
@@ -46,18 +42,18 @@ import org.dcm4che3.data.VR;
 import org.dcm4che3.media.DicomDirWriter;
 import org.dcm4che3.media.RecordType;
 import org.dcm4che3.util.UIDUtils;
+import org.opencv.core.MatOfInt;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.weasis.core.api.explorer.ObservableEvent;
 import org.weasis.core.api.gui.util.AbstractItemDialogPage;
 import org.weasis.core.api.gui.util.AppProperties;
 import org.weasis.core.api.gui.util.FileFormatFilter;
-import org.weasis.core.api.image.util.ImageFiler;
 import org.weasis.core.api.media.data.MediaElement;
 import org.weasis.core.api.media.data.MediaSeries;
 import org.weasis.core.api.media.data.Series;
 import org.weasis.core.api.media.data.TagW;
-import org.weasis.core.api.media.data.Thumbnail;
 import org.weasis.core.api.util.FileUtil;
 import org.weasis.core.api.util.LangUtil;
 import org.weasis.core.api.util.ResourceUtil;
@@ -76,6 +72,9 @@ import org.weasis.dicom.explorer.ExplorerTask;
 import org.weasis.dicom.explorer.ExportDicom;
 import org.weasis.dicom.explorer.ExportTree;
 import org.weasis.dicom.explorer.pr.DicomPrSerializer;
+import org.weasis.opencv.data.PlanarImage;
+import org.weasis.opencv.op.ImageConversion;
+import org.weasis.opencv.op.ImageProcessor;
 
 import com.github.stephenc.javaisotools.iso9660.ConfigException;
 import com.github.stephenc.javaisotools.iso9660.ISO9660RootDirectory;
@@ -310,16 +309,20 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         File destinationDir = new File(exportDir, path);
                         destinationDir.mkdirs();
 
-                        RenderedImage image = img.getImage(null);
+                        PlanarImage image = img.getImage(null);
                         if (image != null) {
                             image = img.getRenderedImage(image);
                         }
                         if (image != null) {
-                            ImageFiler.writeJPG(new File(destinationDir, instance + ".jpg"), image, //$NON-NLS-1$
-                                jpegQuality / 100.0f);
+                            File destinationFile = new File(destinationDir, instance + ".jpg"); //$NON-NLS-1$
+
+                            MatOfInt map = new MatOfInt(Imgcodecs.CV_IMWRITE_JPEG_QUALITY, jpegQuality);
+                            ImageProcessor.writeImage(image.toMat(), destinationFile, map);
                         } else {
-                            LOGGER.error("Cannot export DICOM file to jpeg: {}", img.getFileCache().getOriginalFile()); //$NON-NLS-1$
+                            LOGGER.error("Cannot export DICOM file to jpeg: {}", //$NON-NLS-1$
+                                img.getFileCache().getOriginalFile().orElse(null));
                         }
+
                         // Prevent to many files open on Linux (Ubuntu => 1024) and close image stream
                         img.removeImageFromCache();
                     } else if (node.getUserObject() instanceof MediaElement
@@ -396,7 +399,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         if (img.saveToFile(destinationFile)) {
                             writeInDicomDir(writer, img, node, iuid, destinationFile);
                         } else {
-                            LOGGER.error("Cannot export DICOM file: {}", img.getFileCache().getOriginalFile()); //$NON-NLS-1$
+                            LOGGER.error("Cannot export DICOM file: {}", //$NON-NLS-1$
+                                img.getFileCache().getOriginalFile().orElse(null));
                         }
                     } else if (node.getUserObject() instanceof MediaElement) {
                         MediaElement dcm = (MediaElement) node.getUserObject();
@@ -528,7 +532,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         if (writer != null) {
             if (!(img.getMediaReader() instanceof DcmMediaReader)
                 || ((DcmMediaReader) img.getMediaReader()).getDicomObject() == null) {
-                LOGGER.error("Cannot export DICOM file: ", img.getFileCache().getOriginalFile()); //$NON-NLS-1$
+                LOGGER.error("Cannot export DICOM file: ", img.getFileCache().getOriginalFile().orElse(null)); //$NON-NLS-1$
                 return false;
             }
             return writeInDicomDir(writer, ((DcmMediaReader) img.getMediaReader()).getDicomObject(), node, iuid,
@@ -679,15 +683,11 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         if (image == null) {
             return null;
         }
-        BufferedImage thumbnail = null;
+        PlanarImage thumbnail = null;
         PlanarImage imgPl = image.getImage(null);
         if (imgPl != null) {
-            RenderedImage img = image.getRenderedImage(imgPl);
-            final double scale = Math.min(128 / (double) img.getHeight(), 128 / (double) img.getWidth());
-            final PlanarImage thumb = scale < 1.0
-                ? SubsampleAverageDescriptor.create(img, scale, scale, Thumbnail.DownScaleQualityHints).getRendering()
-                : PlanarImage.wrapRenderedImage(img);
-            thumbnail = thumb.getAsBufferedImage();
+            PlanarImage img = image.getRenderedImage(imgPl);
+            thumbnail = ImageProcessor.buildThumbnail(img, new Dimension(128, 128), true);
         }
         // Prevent to many files open on Linux (Ubuntu => 1024) and close image stream
         image.removeImageFromCache();
@@ -695,13 +695,12 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         if (thumbnail == null) {
             return null;
         }
-        int w = thumbnail.getWidth();
-        int h = thumbnail.getHeight();
+        int w = thumbnail.width();
+        int h = thumbnail.height();
 
         String pmi = TagD.getTagValue(image, Tag.PhotometricInterpretation, String.class);
-        BufferedImage bi = thumbnail;
-        if (thumbnail.getColorModel().getColorSpace().getType() != ColorSpace.TYPE_GRAY) {
-            bi = convertBI(thumbnail, BufferedImage.TYPE_BYTE_INDEXED);
+        if (thumbnail.channels() >= 3) {
+
             pmi = "PALETTE COLOR"; //$NON-NLS-1$
         }
 
@@ -709,6 +708,8 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         Attributes iconItem = new Attributes();
 
         if ("PALETTE COLOR".equals(pmi)) { //$NON-NLS-1$
+            BufferedImage bi =
+                ImageConversion.convertTo(ImageConversion.toBufferedImage(thumbnail), BufferedImage.TYPE_BYTE_INDEXED);
             IndexColorModel cm = (IndexColorModel) bi.getColorModel();
             int[] lutDesc = { cm.getMapSize(), 0, 8 };
             byte[] r = new byte[lutDesc[0]];
@@ -732,11 +733,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
             }
         } else {
             pmi = "MONOCHROME2"; //$NON-NLS-1$
-            for (int y = 0, i = 0; y < h; ++y) {
-                for (int x = 0; x < w; ++x, ++i) {
-                    iconPixelData[i] = (byte) bi.getRGB(x, y);
-                }
-            }
+            thumbnail.get(0, 0, iconPixelData);
         }
         iconItem.setString(Tag.PhotometricInterpretation, VR.CS, pmi);
         iconItem.setInt(Tag.Rows, VR.US, h);
@@ -747,17 +744,6 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
         iconItem.setInt(Tag.HighBit, VR.US, 7);
         iconItem.setBytes(Tag.PixelData, VR.OW, iconPixelData);
         return iconItem;
-    }
-
-    private static BufferedImage convertBI(BufferedImage src, int imageType) {
-        BufferedImage dst = new BufferedImage(src.getWidth(), src.getHeight(), imageType);
-        Graphics2D big = dst.createGraphics();
-        try {
-            big.drawImage(src, 0, 0, null);
-        } finally {
-            big.dispose();
-        }
-        return dst;
     }
 
 }
