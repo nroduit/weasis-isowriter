@@ -7,7 +7,7 @@
 	<parent>
 		<artifactId>weasis-parent</artifactId>
 		<groupId>org.weasis</groupId>
-		<version>3.0.1</version>
+		<version>3.0.2</version>
 	</parent>
 	<artifactId>weasis-isowriter</artifactId>
 	<packaging>bundle</packaging>
