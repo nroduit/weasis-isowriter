@@ -316,7 +316,7 @@ public class IsoImageExport extends AbstractItemDialogPage implements ExportDico
                         if (image != null) {
                             File destinationFile = new File(destinationDir, instance + ".jpg"); //$NON-NLS-1$
 
-                            MatOfInt map = new MatOfInt(Imgcodecs.CV_IMWRITE_JPEG_QUALITY, jpegQuality);
+                            MatOfInt map = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, jpegQuality);
                             ImageProcessor.writeImage(image.toMat(), destinationFile, map);
                         } else {
                             LOGGER.error("Cannot export DICOM file to jpeg: {}", //$NON-NLS-1$
