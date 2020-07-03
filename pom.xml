@@ -7,7 +7,7 @@
 	<parent>
 		<artifactId>weasis-parent</artifactId>
 		<groupId>org.weasis</groupId>
-		<version>3.6.0</version>
+		<version>3.6.1</version>
 	</parent>
 	<artifactId>weasis-isowriter</artifactId>
 	<packaging>bundle</packaging>
@@ -58,9 +58,9 @@
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.weasis.opencv</groupId>
-			<artifactId>weasis-opencv-core</artifactId>
-			<version>${project.parent.version}</version>
+			<groupId>org.weasis.core</groupId>
+			<artifactId>weasis-core-img</artifactId>
+			<version>${weasis.core.img.version}</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
