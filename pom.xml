@@ -7,10 +7,10 @@
 	<parent>
 		<artifactId>weasis-parent</artifactId>
 		<groupId>org.weasis</groupId>
-		<version>3.6.1</version>
+		<version>3.7.0</version>
 	</parent>
 	<artifactId>weasis-isowriter</artifactId>
-	<packaging>bundle</packaging>
+	<packaging>jar</packaging>
 	<name>${project.artifactId}</name>
 	<description>Tool for creating and burning iso9660 image</description>
 
@@ -36,15 +36,32 @@
 				<artifactId>maven-scr-plugin</artifactId>
 			</plugin>
 			<plugin>
-				<groupId>org.apache.felix</groupId>
-				<artifactId>maven-bundle-plugin</artifactId>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>copy-dependency</id>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<includeArtifactIds>
+								sabre,iso9660-writer,weasis-distributions
+							</includeArtifactIds>
+							<stripVersion>true</stripVersion>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>biz.aQute.bnd</groupId>
+				<artifactId>bnd-maven-plugin</artifactId>
 				<configuration>
-					<instructions>
-						<!-- exclude dependencies not used -->
-						<Import-Package>!org.apache.tools.ant.*,!org.apache.commons.lang.*,*</Import-Package>
-						<Embed-Dependency>*;scope=compile;inline=true,weasis-distributions;scope=runtime;inline=false</Embed-Dependency>
-						<Embed-StripVersion>true</Embed-StripVersion>
-					</instructions>
+					<bnd>
+						-includeresource.all: lib/=target/dependency/;lib:=true
+						Import-Package: !org.apache.tools.ant.*,!org.apache.commons.lang.*,*
+						Export-Package: org.weasis.isowriter.*
+					</bnd>
 				</configuration>
 			</plugin>
 		</plugins>
@@ -84,12 +101,12 @@
 		<dependency>
 			<groupId>com.github.stephenc.java-iso-tools</groupId>
 			<artifactId>iso9660-writer</artifactId>
-			<version>2.0.1</version>
+			<version>2.1.0</version>
 		</dependency>
 		<dependency>
 			<groupId>com.github.stephenc.java-iso-tools</groupId>
 			<artifactId>sabre</artifactId>
-			<version>2.0.1</version>
+			<version>2.1.0</version>
 			<exclusions>
 				<exclusion>
 					<groupId>commons-lang</groupId>
